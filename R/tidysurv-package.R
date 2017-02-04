@@ -400,7 +400,6 @@ summary.cr_survreg <- function(object, ...) {
 #' @param newdata Optional. A dataframe.
 #' @param group_vars A character-vector specifying column(s) to group-by when creating the
 #'   survival-curves.
-#' @param states For competing-risks models, the states we want information about.
 #' @param other_vars_fun All covariates not in \code{group_vars} will have this function applied to
 #'   them. Should be a function that takes a numeric vector and returns a numeric vector with a single unique value.
 #'   Defaults to `mean` with na-removal.
@@ -410,31 +409,39 @@ summary.cr_survreg <- function(object, ...) {
 #' @export
 #'
 tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
-                                states = NULL, time_period = NULL,
+                                time_period = NULL,
                                 other_vars_fun = function(x) mean(x, na.rm=TRUE),
                                 ...) {
-
   if (is.null(newdata))
     newdata <- attr(object,'cr_survreg')$data
 
 
   # Determine Covariate Types and Groups ---
+  # terms and column-names are not identical always, so we have to do some mapping.
+
+  # first, get the terms (so includes stuff like `factor([col-name])`)
   list_of_terms_ob <- purrr::map(object, .f = ~stats::delete.response(stats::terms(.x$concat.formula)))
   terms_chars <- unique(purrr::flatten_chr(purrr::map(list_of_terms_ob, ~attr(.x, 'term.labels'))))
-  df_mf <- model.frame(reformulate(terms_chars), data = newdata, na.action=na.pass)
-
   list_of_terms <- purrr::map(.x = object,
                               .f = ~attr(stats::delete.response(stats::terms(.x$concat.formula)),'term.labels'))
+
+  # second, for each character-vector of terms in each of the sub-models, find the 'variable' (assumed to be column-name)
+  # this hasn't been tested with non-standard column-names, but should* work.
   list_of_mappings <- purrr::map(
     .x = list_of_terms,
     .f = function(model_terms_char)
       structure(model_terms_char,
                 names = purrr::map_chr(model_terms_char, .f = ~all.vars(lazyeval::as.lazy(.x)$expr))) )
 
+  # third, get the class of each term/column
+  df_mf <- model.frame(reformulate(terms_chars), data = newdata, na.action=na.pass)
   list_of_classes <- purrr::map(list_of_mappings,
                                 function(model_maps) purrr::map_chr(.x = df_mf[,model_maps,drop=FALSE], .f = ~class(.x)[[length(class(.x))]]) )
 
-  df_all_covs <- newdata[,all.vars(reformulate(terms_chars)),drop=FALSE]
+  # fourth, make a dataframe with the columns needed for the models, plus any grouping variables
+  # that might not be in the model. for each factor-term, if no grouping-column corresponds to it,
+  # add that factor-term to the grouping.
+  df_all_covs <- newdata[,unique(c(group_vars,all.vars(reformulate(terms_chars)))),drop=FALSE]
   for (i in seq_along(list_of_mappings)) {
     need_to_group_lgl <- (list_of_classes[[i]]=='factor')
     already_grouped_lgl <- (names(list_of_mappings[[i]]) %in% group_vars) | (list_of_mappings[[i]] %in% group_vars)
@@ -479,8 +486,6 @@ tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
     df_tidysurv <- tidysurv(update(form_lhs, .~1), data = df_all, time_period = time_period)
 
   # Get Predictions ---
-  if (is.null(states))
-    states <- setdiff(unique(df_tidysurv$.surv_state),'')
   times <- sort(unique(df_tidysurv$time))
   df_small <- dplyr::distinct(df_all_covs)
   df_small$..rowname <- as.character(1:nrow(df_small))

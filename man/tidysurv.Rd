@@ -4,6 +4,7 @@
 \name{tidysurv}
 \alias{tidysurv}
 \alias{tidysurv-package}
+\alias{tidysurv}
 \title{tidysurv package}
 \usage{
 tidysurv(object, ...)
@@ -21,4 +22,3 @@ tidysurv package
 
 See \code{?tidysurv.formula} and \code{tidysurv.cr_survreg} for more details.
 }
-

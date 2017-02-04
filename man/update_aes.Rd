@@ -17,4 +17,3 @@ An updated aes for ggplot mapping argument.
 \description{
 Update ggplot aes
 }
-

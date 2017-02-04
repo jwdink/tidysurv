@@ -4,12 +4,16 @@
 \alias{plot.tidysurv}
 \title{Plot a tidysurv object}
 \usage{
-\method{plot}{tidysurv}(x, mapping = NULL, states = NULL, ...)
+\method{plot}{tidysurv}(x, mapping = NULL, type = "cumulative",
+  states = NULL, ...)
 }
 \arguments{
 \item{x}{A tidysurv object}
 
 \item{mapping}{An aesthetic mapping for ggplot, created by one of the \code{aes} functions.}
+
+\item{type}{What type of plot? Cumulative/survival, or rate? If the latter, need to have set
+\code{time_period} in \code{tidysurv}.}
 
 \item{states}{For a competing risks model: which states should be included in the graph?}
 
@@ -24,4 +28,3 @@ A ggplot object, with lines for each survival curve, and ribbons for confidence 
 \description{
 Plot a tidysurv object
 }
-

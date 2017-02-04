@@ -4,13 +4,16 @@
 \alias{ggplot.tidysurv}
 \title{Ggplot method for tidysurv objects}
 \usage{
-\method{ggplot}{tidysurv}(data, mapping = NULL, ...,
+\method{ggplot}{tidysurv}(data, mapping = NULL, type = "cumulative", ...,
   environment = parent.frame())
 }
 \arguments{
 \item{data}{A tidysurv object}
 
 \item{mapping}{An aesthetic mapping for ggplot, created by one of the \code{aes} functions.}
+
+\item{type}{What type of plot? Cumulative/survival, or rate? If the latter, need to have set
+\code{time_period} in \code{tidysurv}.}
 
 \item{...}{Further arguments to be passed to ggplot}
 
@@ -24,4 +27,3 @@ A ggplot object without any layers, but with sensible defaults for aesthetic map
 \description{
 Ggplot method for tidysurv objects
 }
-

@@ -5,7 +5,8 @@
 \title{Create a tidy-surv object for an object of class \code{cr_survreg}}
 \usage{
 \method{tidysurv}{cr_survreg}(object, newdata = NULL, group_vars = NULL,
-  states = NULL, other_vars_fun = function(x) mean(x, na.rm = TRUE), ...)
+  time_period = NULL, other_vars_fun = function(x) mean(x, na.rm = TRUE),
+  ...)
 }
 \arguments{
 \item{object}{An object of class \code{cr_survreg}}
@@ -14,8 +15,6 @@
 
 \item{group_vars}{A character-vector specifying column(s) to group-by when creating the
 survival-curves.}
-
-\item{states}{For competing-risks models, the states we want information about.}
 
 \item{other_vars_fun}{All covariates not in \code{group_vars} will have this function applied to
 them. Should be a function that takes a numeric vector and returns a numeric vector with a single unique value.
@@ -29,4 +28,3 @@ An object of class \code{cr_survreg}
 \description{
 Create a tidy-surv object for an object of class \code{cr_survreg}
 }
-

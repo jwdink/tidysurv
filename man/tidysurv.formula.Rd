@@ -14,6 +14,9 @@
 
 \item{na.action}{a missing-data filter function}
 
+\item{time_period}{You can choose to bin events into time-periods. This can be helpful if you want
+plot the rate within a time-bin, rather than the cumulative rate of incidence.}
+
 \item{max_num_levels}{Since this function creates a separate survival-curve for each distinct
 level of predictors (the right hand side of the \code{formula}), it can sometimes be the case
 that you'll accidentally create hundreds or thousands of distinct survival curves, because you
@@ -28,4 +31,3 @@ A tidy dataframe
 \description{
 Make a tidy survfit object from a formula
 }
-

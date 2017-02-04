@@ -44,4 +44,3 @@ An object of type \code{cr_survreg}, with plot and summary methods.
 \description{
 Easy interface for parametric competing-risks survival-regression
 }
-

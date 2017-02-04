@@ -19,4 +19,3 @@ A \code{Surv} object with interval-censoring.
 \description{
 Create Surv object of type 'interval' given upper and lower bounds of event-times.
 }
-

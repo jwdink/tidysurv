@@ -29,4 +29,3 @@ This function returns predictions from a \code{flexsurvreg} object. This can be 
 convenient/faster alternative to \code{summary.flexsurvreg}, when the number of observations with
 unique combinations of covariates is large.
 }
-

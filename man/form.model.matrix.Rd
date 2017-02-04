@@ -17,4 +17,3 @@ A model.matrix.
 \description{
 Helper for \code{predict.flexsurvreg}.
 }
-

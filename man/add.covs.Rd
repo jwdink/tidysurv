@@ -23,4 +23,3 @@ Matrix of basepars
 \description{
 Helper for \code{predict.flexsurvreg}.
 }
-
