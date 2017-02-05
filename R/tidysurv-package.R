@@ -420,10 +420,9 @@ tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
   # terms and column-names are not identical always, so we have to do some mapping.
 
   # first, get the terms (so includes stuff like `factor([col-name])`)
-  list_of_terms_ob <- purrr::map(object, .f = ~stats::delete.response(stats::terms(.x$concat.formula)))
+  list_of_terms_ob <- purrr::map(object, .f = ~stats::delete.response(terms(.x)))
   terms_chars <- unique(purrr::flatten_chr(purrr::map(list_of_terms_ob, ~attr(.x, 'term.labels'))))
-  list_of_terms <- purrr::map(.x = object,
-                              .f = ~attr(stats::delete.response(stats::terms(.x$concat.formula)),'term.labels'))
+  list_of_terms <- purrr::map(.x = list_of_terms_ob, .f = ~attr(.x,'term.labels'))
 
   # second, for each character-vector of terms in each of the sub-models, find the 'variable' (assumed to be column-name)
   # this hasn't been tested with non-standard column-names, but should* work.
@@ -495,14 +494,10 @@ tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
     .x = object,
     .y = names(object),
     .f = function(fit, event_name) {
-      df <- purrr::map2_df(
-        .x = 1:nrow(df_small),
-        .y = summary(object = fit, newdata= df_small, type = 'survival', t = times, ci = FALSE),
-        .f = function(r,df_sum) {
-          dplyr::bind_cols(df_sum, as.data.frame(df_small[rep(r,nrow(df_sum)),,drop=FALSE]) )
-        })
-      colnames(df)[colnames(df) == 'est'] <- event_name
-      dplyr::as_data_frame(df[,c('time',event_name,'..rowname')])
+      df_expanded <- tidyr::crossing(df_small, time = times)
+      df_expanded[[event_name]] <-
+        predict(fit, newdata = df_expanded,  type='survival', times = df_expanded$time)
+      dplyr::as_data_frame(df_expanded[,c('time',event_name,'..rowname')])
     })
   df_covs_with_surv <- dplyr::left_join(df_small,
                                          purrr::reduce(list_of_fitted_dfs,dplyr::left_join, by=c('time','..rowname')),

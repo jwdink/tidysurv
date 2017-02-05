@@ -1,71 +1,7 @@
-#' #' Title
-#' #'
-#' #' @param object
-#' #' @param ...
-#' #'
-#' #' @return
-#' #' @export
-#' #'
-#' #' @examples
-#' msfit <- function(object, ...) {
-#'   UseMethod('msfit')
-#' }
-
-# msfit.list <- function (object, t, newdata = NULL, variance = TRUE, tvar = "trans",
-#                                trans, B = 1000)
-# {
-#
-#   tr <- sort(unique(na.omit(as.vector(trans))))
-#   ntr <- length(tr)
-#
-#   tHaz <- lapply(object, FUN = function(fit) summary(fit, type = "cumhaz", t = t, newdata = newdata, ci = FALSE))
-#   Haz_list <- purrr::transpose(tHaz)
-#
-#   for (i in seq_along(Haz_list)) {
-#     Haz_list[[i]] <- dplyr::bind_rows(Haz_list[[i]])
-#     rownames(Haz_list[[i]]) <- NULL
-#     Haz_list[[i]]$trans <- rep(seq_along(tr), each = length(t))
-#     names(Haz_list[[i]])[names(Haz_list[[i]]) == "est"] <- "Haz"
-#   }
-#
-#   #res <- list(Haz = Haz, trans = trans)
-#
-#   foundse <- all(!is.na(sapply(object, function(x) x$cov[[1]])))
-#   if (variance && foundse) {
-#     boot <- array(dim = c(length(Haz_list), B, length(t), ntr))
-#     for (i in seq_along(tr)) {
-#       boot[, , , i] <- flexsurv:::normbootfn.flexsurvreg(object[[i]],
-#                                                          t = t,
-#                                                          start = 0,
-#                                                          newdata = newdata,
-#                                                          B = B,
-#                                                          fn = flexsurv:::summary.fns(object[[i]],"cumhaz"))
-#     }
-#     ntr2 <- 0.5 * ntr * (ntr + 1)
-#     nt <- length(t)
-#     mat <- matrix(nrow = ntr, ncol = ntr)
-#     trans1 <- rep(t(row(mat))[!t(lower.tri(mat))], each = nt)
-#     trans2 <- rep(t(col(mat))[!t(lower.tri(mat))], each = nt)
-#     varHaz_list <- vector(length = length(Haz_list), mode = 'list')
-#     browser()
-#     for (nd_row in seq_along(Haz_list)) {
-#       varHaz_list[[nd_row]] <- data.frame(time = rep(t, ntr2), varHaz = numeric(ntr2 *nt), trans1 = trans1, trans2 = trans2)
-#       for (i in 1:ntr) {
-#         for (j in i:ntr) {
-#           varHaz_list[[nd_row]]$varHaz[trans1 == i & trans2 == j] <-
-#             mapply(cov, split(t(boot[nd_row, , , i]), seq_along(t)), split(t(boot[nd_row, , , j]), seq_along(t)))
-#         }
-#       }
-#     }
-#
-#   }
-#   list_of_msfits <- lapply(seq_along(Haz_list), function(i) {
-#     structure(list(Haz = Haz_list, varHaz = varHaz_list, trans = trans),
-#               class = 'msfit')
-#   })
-#   mstate::probtrans(list_of_msfits[[1]], predt = 0)
-#   res
-# }
+#' @export
+terms.flexsurvreg <- function(x, ...) {
+  stats::terms(x$concat.formula)
+}
 
 #' @describeIn plot_coefs
 #' Plot coefficients of `flexsurvreg` model

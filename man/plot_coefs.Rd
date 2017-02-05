@@ -4,18 +4,7 @@
 \alias{plot_coefs.flexsurvreg}
 \alias{plot_coefs}
 \alias{plot_coefs.cr_survreg}
-\title{#' Title
-#'
-#' @param object
-#' @param ...
-#'
-#' @return
-#' @export
-#'
-#' @examples
-msfit <- function(object, ...) {
-  UseMethod('msfit')
-}}
+\title{Plot coefficients}
 \usage{
 \method{plot_coefs}{flexsurvreg}(object, ...)
 
@@ -38,19 +27,6 @@ A ggplot object
 A ggplot object
 }
 \description{
-#' Title
-#'
-#' @param object
-#' @param ...
-#'
-#' @return
-#' @export
-#'
-#' @examples
-msfit <- function(object, ...) {
-  UseMethod('msfit')
-}
-
 Plot coefficients
 }
 \section{Methods (by class)}{
