@@ -413,46 +413,25 @@ tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
                                 other_vars_fun = function(x) mean(x, na.rm=TRUE),
                                 ...) {
   if (is.null(newdata))
-    newdata <- attr(object,'cr_survreg')$data
+    newdata <- attr(object, "cr_survreg")$data
 
+  terms_chars <- unique(purrr::flatten_chr(purrr::map(.x = object, .f = ~attr(delete.response(terms(.x)), "term.labels"))))
+  df_mf <- model.frame(reformulate(terms_chars), data = newdata, na.action = na.pass)
 
-  # Determine Covariate Types and Groups ---
-  # terms and column-names are not identical always, so we have to do some mapping.
+  df_mapping <- purrr::map_df(object, ~get_terms_mappings(terms(.x), data = newdata), .id = 'sub_model')
 
-  # first, get the terms (so includes stuff like `factor([col-name])`)
-  list_of_terms_ob <- purrr::map(object, .f = ~stats::delete.response(terms(.x)))
-  terms_chars <- unique(purrr::flatten_chr(purrr::map(list_of_terms_ob, ~attr(.x, 'term.labels'))))
-  list_of_terms <- purrr::map(.x = list_of_terms_ob, .f = ~attr(.x,'term.labels'))
+  df_all_covs <- newdata[, unique(c(group_vars, df_mapping$variable_name)), drop = FALSE]
 
-  # second, for each character-vector of terms in each of the sub-models, find the 'variable' (assumed to be column-name)
-  # this hasn't been tested with non-standard column-names, but should* work.
-  list_of_mappings <- purrr::map(
-    .x = list_of_terms,
-    .f = function(model_terms_char)
-      structure(model_terms_char,
-                names = purrr::map_chr(model_terms_char, .f = ~all.vars(lazyeval::as.lazy(.x)$expr))) )
-
-  # third, get the class of each term/column
-  df_mf <- model.frame(reformulate(terms_chars), data = newdata, na.action=na.pass)
-  list_of_classes <- purrr::map(list_of_mappings,
-                                function(model_maps) purrr::map_chr(.x = df_mf[,model_maps,drop=FALSE], .f = ~class(.x)[[length(class(.x))]]) )
-
-  # fourth, make a dataframe with the columns needed for the models, plus any grouping variables
-  # that might not be in the model. for each factor-term, if no grouping-column corresponds to it,
-  # add that factor-term to the grouping.
-  df_all_covs <- newdata[,unique(c(group_vars,all.vars(reformulate(terms_chars)))),drop=FALSE]
-  for (i in seq_along(list_of_mappings)) {
-    need_to_group_lgl <- (list_of_classes[[i]]=='factor')
-    already_grouped_lgl <- (names(list_of_mappings[[i]]) %in% group_vars) | (list_of_mappings[[i]] %in% group_vars)
-    colnames_to_add <- list_of_mappings[[i]][need_to_group_lgl & !already_grouped_lgl]
-    if (length(colnames_to_add)>0) {
-      df_all_covs[colnames_to_add] <- df_mf[,colnames_to_add,drop=FALSE]
-      group_vars <- c(group_vars,colnames_to_add)
-      purrr::walk(.x = colnames_to_add, .f = ~message("Added '", .x, "' to the `group_vars` (factor)."))
+  # add any factors:
+  df_to_add <- df_mapping %>% filter(term_class=='factor', !is.element(variable_name, group_vars))
+  if (nrow(df_to_add)>0)
+    for (i in seq_len(nrow(df_to_add))) {
+      this_add <- df_to_add$column_name_in_mf[[i]]
+      group_vars <- c(group_vars, this_add)
+      df_all_covs[[this_add]] <- df_mf[[this_add]]
+      message("Added '", df_to_add$column_name_in_mf[[i]], "' to the `group_vars` (factor).")
     }
-  }
 
-  ## Collapse non-grouped vars
   collapse_vars <- setdiff(colnames(df_all_covs), group_vars)
   newdata$..rownum <- 1:nrow(newdata)
   df_all_covs$..rownum <- 1:nrow(df_all_covs)
@@ -618,4 +597,27 @@ tidy.survfit <- function (x, ...)
     ret$strata <- rep(names(x$strata), x$strata)
   }
   ret
+}
+
+#' Get mapping from variables/column to formula terms
+#'
+#' @param terms A 'terms' object
+#' @param data A dataframe
+#'
+#' @return A tidy dataframe with mapping.
+#' @export
+get_terms_mappings <- function(terms, data) {
+  term_ob <- delete.response(terms)
+
+  mapping_mat <- attr(term_ob, 'factors')
+  mf_col_names_with_backticks <- rownames(mapping_mat)
+  original_col_names <- purrr::map_chr(.x = mf_col_names_with_backticks, ~all.vars(lazyeval::as.lazy(.x)$expr))
+
+  out <- data_frame(variable_name = original_col_names,
+                    terms_with_variable = mf_col_names_with_backticks,
+                    column_name_in_mf = stringr::str_replace(string = mf_col_names_with_backticks, pattern = "`", replacement = ""))
+
+  model_frame <- model.frame(term_ob,data=data)
+  out$term_class <- purrr::map_chr(.x = out$column_name_in_mf, .f = ~paste0(class(model_frame[[.x]]), collapse = "; "))
+  out
 }
