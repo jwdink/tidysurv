@@ -412,6 +412,7 @@ tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
                                 time_period = NULL,
                                 other_vars_fun = function(x) mean(x, na.rm=TRUE),
                                 ...) {
+
   if (is.null(newdata))
     newdata <- attr(object, "cr_survreg")$data
 
@@ -423,7 +424,12 @@ tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
   df_all_covs <- newdata[, unique(c(group_vars, df_mapping$variable_name)), drop = FALSE]
 
   # add any factors:
-  df_to_add <- df_mapping %>% filter(term_class=='factor', !is.element(variable_name, group_vars))
+  weird_class_idx <- which( !is.element(df_mapping$term_class, c('factor','character', 'numeric', 'matrix')) )
+  if ( length(weird_class_idx)>0 )
+    stop(call. = FALSE,
+         "The following variables are of an unfamiliar class, don't know how to summarize, please add to `group_vars`:\n",
+         paste0(collapse = ", ", df_mapping$variable_name[weird_class_idx]))
+  df_to_add <- df_mapping %>% filter(term_class%in%c('factor','character'), !is.element(variable_name, group_vars))
   if (nrow(df_to_add)>0)
     for (i in seq_len(nrow(df_to_add))) {
       this_add <- df_to_add$column_name_in_mf[[i]]
