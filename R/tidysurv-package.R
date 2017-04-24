@@ -424,11 +424,7 @@ tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
   df_all_covs <- newdata[, unique(c(group_vars, df_mapping$variable_name)), drop = FALSE]
 
   # add any factors:
-  weird_class_idx <- which( !is.element(df_mapping$term_class, c('factor','character', 'numeric', 'matrix')) )
-  if ( length(weird_class_idx)>0 )
-    stop(call. = FALSE,
-         "The following variables are of an unfamiliar class, don't know how to summarize, please add to `group_vars`:\n",
-         paste0(collapse = ", ", df_mapping$variable_name[weird_class_idx]))
+  # to do: this isn't very robust (e.g., misses AsIs). make better
   df_to_add <- df_mapping %>% filter(term_class%in%c('factor','character'), !is.element(variable_name, group_vars))
   if (nrow(df_to_add)>0)
     for (i in seq_len(nrow(df_to_add))) {
