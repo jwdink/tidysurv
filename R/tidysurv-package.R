@@ -64,7 +64,7 @@ tidysurv.formula <- function(object, data, na.action = na.exclude, time_period =
     stop(call. = FALSE, "The column name '..strata' is reserved, please rename.")
 
   if (!is.null(time_period)) {
-    time_col_name <- as.character(lazyeval::as.lazy(lazyeval::f_lhs(object), env = parent.frame())$expr$time)
+    time_col_name <- as.character(lazyeval::call_standardise(object[[2]])$time)
     if (!is.element(time_col_name, colnames(data))) {
       stop(call. = FALSE,
            "For the `time_period` arg to work, your `Surv` object in your formula should reference a column in your dataset. Instead, found: ", time_col_name)
