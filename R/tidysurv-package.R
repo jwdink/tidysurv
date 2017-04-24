@@ -160,7 +160,7 @@ plot.tidysurv <- function(x, mapping = NULL, type = 'cumulative', states = NULL,
     the_ribbon
   if (attr(x,'tidysurv')$method == 'cr_survreg') {
     if (type == 'rate')
-      g <- g + geom_line(mapping = aes(y = fitted_hazard), size=1.2,alpha=.75)
+      g <- g + geom_line(mapping = aes(y = fitted_rate), size=1.2,alpha=.75)
     else
       g <- g + geom_line(mapping = aes(y = fitted), size=1.2,alpha=.75)
   }
@@ -461,7 +461,8 @@ tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
 
   # Create tidysurv Object ---
   censor_level <- attr(object,'cr_survreg')$censor_level
-  df_all[[event_col_name]] <- factor(df_all[[event_col_name]], levels = c(censor_level, names(object)))
+  if (!is.factor(newdata[[event_col_name]]))
+    df_all[[event_col_name]] <- factor(df_all[[event_col_name]], levels = c(censor_level, names(object)))
   form_lhs <- as.formula(paste0("Surv(time = `", time_col_name, "`, event = `", event_col_name, "`) ~ ."))
 
   if (length(group_vars)>0)
@@ -489,25 +490,32 @@ tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
                                          by = '..rowname')
 
   df_covs_with_surv$surv <- purrr::reduce(.x = df_covs_with_surv[names(object)], .f = `*`)
-  df_covs_with_inc <- df_covs_with_surv %>%
+
+  df_covs_with_rate <- df_covs_with_surv %>%
     split(.$..rowname) %>%
     purrr::map_df(.f = function(df_chunk) {
       df_chunk[names(object)] <- purrr::map(
         .x = names(object),
         .f = function(event_name) {
-          rate <- 1 - df_chunk[[event_name]]/lag(df_chunk[[event_name]], default = 1)
-          cumsum(rate*lag(df_chunk$surv, default = 1))
+          1 - df_chunk[[event_name]]/lag(df_chunk[[event_name]], default = 1)
         })
       return(df_chunk)
     })
 
-  df_covs_with_haz <- dplyr::select(.data = df_covs_with_surv, -surv, -one_of(names(object)))
-  df_covs_with_haz <-
-    bind_cols(df_covs_with_haz,
-              as.data.frame(predict(object, newdata = df_covs_with_haz, times = df_covs_with_haz$time, type = 'hazard')))
-  df_covs_with_haz_tidy <- tidyr::gather_(data = df_covs_with_haz[,c('time',names(object),group_vars),drop=FALSE],
+  df_covs_with_inc <- df_covs_with_rate %>%
+    split(.$..rowname) %>%
+    purrr::map_df(.f = function(df_chunk) {
+      df_chunk[names(object)] <- purrr::map(
+        .x = names(object),
+        .f = function(event_name) {
+          cumsum(df_chunk[[event_name]]*lag(df_chunk$surv, default = 1))
+        })
+      return(df_chunk)
+    })
+
+  df_covs_with_rate_tidy <- tidyr::gather_(data = df_covs_with_rate[,c('time',names(object),group_vars),drop=FALSE],
                                           key_col = '.surv_state',
-                                          value_col = 'fitted_hazard',
+                                          value_col = 'fitted_rate',
                                           gather_cols = names(object))
 
 
@@ -516,7 +524,7 @@ tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
                                                     key_col = '.surv_state',
                                                     value_col = 'fitted',
                                                     gather_cols = names(object)))
-  df_fitted_final <- left_join(df_fitted_final, df_covs_with_haz_tidy, by = unname(c('time',group_vars,'.surv_state')))
+  df_fitted_final <- left_join(df_fitted_final, df_covs_with_rate_tidy, by = unname(c('time',group_vars,'.surv_state')))
   df_fitted_final$.surv_state <- factor(df_fitted_final$.surv_state, levels = levels(df_tidysurv$.surv_state))
   df_out <- dplyr::left_join(df_tidysurv, df_fitted_final, by = unname(c('time',group_vars,'.surv_state')))
 
