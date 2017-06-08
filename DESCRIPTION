@@ -11,7 +11,7 @@ Maintainer@R: c(
 Description: Methods for producting tidy summaries (data-frames) and visualizations of survival data.
 License: MIT + file LICENCE
 LazyData: TRUE
-RoxygenNote: 6.0.0
+RoxygenNote: 6.0.1
 Imports:
   dplyr (>= 0.4.3),
   stringr (>= 1.1.0),

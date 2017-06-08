@@ -27,6 +27,50 @@
 NULL
 #> NULL
 
+#' Take a dataframe, and convert its time column(s) to binned versions.
+#'
+#' @param data A data.frame
+#' @param time_period Number for bin-unit
+#' @param formula_lhs The expression on the left-hand-side of the formula, which generates the `Surv` object
+#'
+#' @return The data, with the relevant time-columns now binned.
+#' @export
+convert_time_cols_to_binned <- function(data, time_period, formula_lhs) {
+  stopifnot(is.data.frame(data))
+  stopifnot(length(time_period)==1)
+
+  response_object <- eval(formula_lhs, envir = data)
+  if (class(response_object)[1]=="Survint")
+    response_object <- with(as.data.frame(response_object), Surv(time = start, time2 = end, event = event))
+  bin_times <- function(time_vec, time_period, start = time_period) {
+    time_grid <- seq(from = start, to = max(time_vec,na.rm=TRUE), by = time_period)
+    time_mat <- matrix(data = rep(time_grid, each = length(time_vec)), nrow = length(time_vec))
+    matrixStats::rowCollapse(x = time_mat, idxs = apply(X = abs(time_vec - time_mat), FUN = which.min, MARGIN = 1))
+  }
+  if ( attr(response_object, 'type') %in% c('counting','mcounting') ) {
+    df_response <- as.data.frame(as.matrix(response_object))
+    min_diff <- min(df_response$stop - df_response$start)
+    if (time_period > min_diff)
+      stop(call. = FALSE,
+           "It looks like you're using 'counting' format for your DV (i.e., you have time-dependent covariates).\n",
+           "In this case, `time_period` cannot be less than the smallest time-interval (min(stop-start)), which is ", min_diff)
+    time_col_name <- as.character(formula_lhs$time2)
+    time_start_col_name <- as.character(formula_lhs$time)
+    if ( !is.element(time_col_name, colnames(data)) | !is.element(time_start_col_name, colnames(data)) )
+      stop(call. = FALSE,
+           "If using `time_period`, your `Surv` response object should only reference column-names (not expressions including column-names).")
+    data[[time_col_name]] <- bin_times(data[[time_col_name]], time_period)
+    data[[time_start_col_name]] <- bin_times(data[[time_start_col_name]], time_period, start = min(data[[time_start_col_name]]))
+  } else {
+    time_col_name <- as.character(formula_lhs$time)
+    if (!is.element(time_col_name, colnames(data)))
+      stop(call. = FALSE,
+           "If using `time_period`, your `Surv` response object should only reference column-names (not expressions including column-names).")
+    data[[time_col_name]] <- bin_times(data[[time_col_name]], time_period)
+  }
+  return(data)
+}
+
 #' Make a tidy survival-object
 #'
 #' See \code{?tidysurv.formula} and \code{tidysurv.cr_survreg} for more details.
@@ -59,37 +103,38 @@ tidysurv <- function(object, ...) {
 #' @export
 #'
 tidysurv.formula <- function(object, data, na.action = na.exclude, time_period = NULL, max_num_levels = 200, ...) {
+
   stopifnot( is.data.frame(data) )
   if( is.element('..strata',colnames(data)) )
     stop(call. = FALSE, "The column name '..strata' is reserved, please rename.")
 
-  if (!is.null(time_period)) {
-    time_col_name <- as.character(lazyeval::call_standardise(object[[2]])$time)
-    if (!is.element(time_col_name, colnames(data))) {
-      stop(call. = FALSE,
-           "For the `time_period` arg to work, your `Surv` object in your formula should reference a column in your dataset. Instead, found: ", time_col_name)
-    }
-    time_grid <- seq(from = time_period, to = max(data[[time_col_name]],na.rm=TRUE), by = time_period)
-    time_mat <- matrix(data = rep(time_grid, each = nrow(data)), nrow = nrow(data))
-    data[[time_col_name]] <- matrixStats::rowCollapse(x = time_mat, idxs = apply(X = abs(data[[time_col_name]] - time_mat), FUN = which.min, MARGIN = 1))
-  }
 
-  ## collect covariates:
-  tobj <- stats::delete.response(stats::terms(object))
-  if ( length(all.vars(tobj)) > 0 ) {
-    mf <- stats::model.frame(formula = tobj, data=data, na.action=na.pass)
-    mfd <- dplyr::distinct(mf)
-    strata_names <- colnames(mfd)
-    mfd$..strata <- as.character(1:nrow(mfd))
-    if (nrow(mfd) > max_num_levels)
+  formula_lhs <- lazyeval::call_standardise(object[[2]])
+
+  if (!is.null(time_period))
+    data <- convert_time_cols_to_binned(data = data, time_period = time_period, formula_lhs = formula_lhs)
+  response_object <- eval(formula_lhs, envir = data)
+  if (class(response_object)[1]=="Survint")
+    response_object <- with(as.data.frame(response_object), Surv(time = start, time2 = end, event = event))
+
+  # ## create model-frame, mapping:
+  model_frame <- model.frame(formula = object, data = data, na.action=na.pass)
+  model_frame <- model_frame[,-1,drop=FALSE]
+
+  # call survfit on pre-stratified data:
+  if (ncol(model_frame)>0) {
+    df_mf_distinct <- dplyr::distinct(model_frame)
+    strata_names <- colnames(df_mf_distinct)
+    df_mf_distinct <- rownames_to_column(df_mf_distinct, var = '..strata')
+    if (nrow(df_mf_distinct) > max_num_levels)
       stop(call. = FALSE, "The right-hand-side of the formula defines more than ",
            max_num_levels,
            " unique levels. Increase `max_num_levels` if this was intentional.")
-    newdata <- bind_cols( data[,all.vars(update(object, .~1)),drop=FALSE],
-                          dplyr::left_join(x = mf, y = mfd, by = colnames(mf)) )
-    sfit <- survival::survfit(formula = update(object, .~..strata), data = newdata, na.action = na.action, ... = ...)
+    df_mf_w_strata <- left_join(model_frame, df_mf_distinct, by = colnames(model_frame))
+    sfit <- survival::survfit(formula = update(response_object~1, .~..strata), data = df_mf_w_strata,
+                    na.action = na.action, ... = ...)
   } else {
-    sfit <- survival::survfit(formula = object, data = data, na.action = na.action, ... = ...)
+    sfit <- survival::survfit(formula = response_object~1, na.action = na.action, ... = ...)
     strata_names <- NULL
   }
 
@@ -97,9 +142,9 @@ tidysurv.formula <- function(object, data, na.action = na.exclude, time_period =
   df_tidy <- tidy.survfit(sfit)
   if (inherits(sfit, "survfitms"))
     df_tidy <- dplyr::rename(.data = df_tidy, .surv_state = state)
-  if ( length(all.vars(tobj)) > 0 )  {
+  if ( ncol(model_frame)>0 )  {
     df_tidy$..strata <- stringr::str_match(string = df_tidy$strata, pattern = "\\.\\.strata=(.*)")[,2]
-    out <- dplyr::left_join(x = df_tidy, y = mfd, by = '..strata')
+    out <- dplyr::left_join(x = df_tidy, y = df_mf_distinct, by = '..strata')
     out <- dplyr::as_data_frame(dplyr::select(.data = out, -`..strata`, -strata))
   } else {
     out <- dplyr::as_data_frame(df_tidy)
@@ -239,7 +284,6 @@ update_aes <- function(old_aes, new_aes) {
   }
 }
 
-
 #' Easy interface for parametric competing-risks survival-regression
 #'
 #' @param time_col_name A character indicating the column-name of the 'time' column.
@@ -257,12 +301,6 @@ update_aes <- function(old_aes, new_aes) {
 #'   (truncation) times. See the vignette for details.
 #' @param method A character string naming the function to be called for survival-regression
 #'   modelling. Currently only supports \code{flexsurvreg}.
-#' @param memoize When this function runs, it calls the fitting method (e.g., \code{flexsurvreg}),
-#' once per event-type. If you're only tweaking the model for one event-type, you might not want to
-#' waste time re-fitting the model for all of the other event types. When \code{memoize} is TRUE (the
-#' default), calls to the fitting method are cached: if called with the exact same arguments, the
-#' code isn't re-run. This means that you can tweak the model for one event-type at a time, without
-#' having to worry about re-fitting the other models on each function call.
 #'
 #' @return An object of type \code{cr_survreg}, with plot and summary methods.
 #' @export
@@ -272,33 +310,17 @@ cr_survreg <- function(time_col_name,
                        data,
                        list_of_list_of_args,
                        time_lb_col_name = NULL,
-                       time_start_col_name = NULL,
-                       method = 'flexsurvreg',
-                       memoize = TRUE) {
-
-
-  ## memoized functions:
-  mem_flexsurvreg <- memoise::memoise(function(formula, anc=NULL, data, weights=NULL,bhazard=NULL,subset=NULL,
-                                               na.action= na.exclude, dist, inits=NULL, fixedpars=NULL, dfns=NULL,
-                                               aux=NULL, cl=.95, integ.opts = NULL, sr.control = survival::survreg.control(), ...) {
-    if ( (!is.null(weights)) | (!is.null(bhazard)) | (!is.null(subset)) | (!is.null(integ.opts)) )
-      stop("Weights, bhazard, integ.opts, and subset are non supported if `memoize= TRUE`.")
-    if (is.null(inits))
-      flexsurv::flexsurvreg(formula = formula, anc=anc, data = data,
-                            na.action=na.action, dist=dist, fixedpars=fixedpars,
-                            dfns=dfns, aux=aux, cl=cl, sr.control = sr.control, ... = ...)
-    else
-      flexsurv::flexsurvreg(formula = formula, anc=anc, data = data, inits=inits,
-                            na.action=na.action, dist=dist, fixedpars=fixedpars,
-                            dfns=dfns, aux=aux, cl=cl, sr.control = sr.control, ... = ...)
-
-  })
+                       time_dependent_config = list(time_start_col_name = NULL, id_col_name = NULL, time_dependent_col_names = NULL),
+                       method = 'flexsurvreg') {
 
   ## check on arg-types/values
   if (is.null(names(list_of_list_of_args)) || any( names(list_of_list_of_args) == "" ) )
     stop("Churn-types must be a named list.",call. = FALSE)
   stopifnot(is.data.frame(data))
-  method <- match.arg(arg = method, choices = c('flexsurvreg','flexsurvspline'))
+  method <- match.arg(arg = method, choices = c('flexsurvreg','flexsurvspline','survreg_map'))
+
+  stopifnot( c('time_start_col_name', 'id_col_name', 'time_dependent_col_names') %in% names(time_dependent_config))
+  time_start_col_name <- time_dependent_config$time_start_col_name
 
   ## type of censoring
   if (!is.null(time_lb_col_name) & !is.null(time_start_col_name) & is.element(method, c('flexsurvreg', 'flexsurvspline')) )
@@ -344,7 +366,7 @@ cr_survreg <- function(time_col_name,
     .y = names(list_of_list_of_args),
     function(args, this_event_name) {
 
-      event_char <- paste0("(`", event_col_name, "`", "=='", this_event_name, "')")
+      event_char <- paste0("as.integer(`", event_col_name, "`", "=='", this_event_name, "')")
       events_vec <- lazyeval::lazy_eval(as.lazy(event_char), data = data)
       if (all(!events_vec, na.rm = TRUE))
         warning(call. = FALSE,
@@ -353,31 +375,117 @@ cr_survreg <- function(time_col_name,
 
       if (method %in% c('flexsurvreg','flexsurvspline')) {
         if (censoring_types == 'interval')
-          update_char <- paste0("tidysurv::interval_censor_helper(time= ", time_col_name, ", time_lb=", time_lb_col_name, ", event= ", event_char, ") ~ .")
+          update_char <- glue::glue("interval_censor_helper(time={time_col_name}, time_lb = {time_lb_col_name}, event = {event_char}) ~ .")
         else if (censoring_types == 'truncation')
-          update_char <- paste0("Surv(time=",time_start_col_name,", time2=", time_col_name,", event = ", event_char, ") ~ .")
+          update_char <- glue::glue("Surv(time={time_start_col_name}, time2={time_col_name}, event={event_char}) ~ .")
         else
-          update_char <- paste0("Surv(time=",time_col_name,", event = ", event_char, ") ~ .")
+          update_char <- glue::glue("Surv(time={time_col_name}, event={event_char}) ~ .")
+      } else if (method == 'survreg_map') {
+        the_call <- call('Survint',
+                         end = parse(text = time_col_name)[[1]],
+                         event = parse(text = event_char)[[1]])
+        if (!is.null(time_start_col_name)) the_call$start <- parse(text = time_start_col_name)[[1]]
+        if (!is.null(time_lb_col_name)) the_call$end_lb <- parse(text = time_lb_col_name)[[1]]
+        update_char <- paste(paste0(deparse(the_call), collapse=""), "~.")
       }
-
       stopifnot( 'formula' %in% names(args) )
       args$formula <- update(args$formula, stats::as.formula(update_char))
       args$data <- data
-      fit <- do.call( ifelse(memoize, yes = paste0("mem_",method), no = method) , args = args)
+      fit <- do.call( method , args = args)
       fit$call$data <- NULL
       fit
     })
+
+  if (!is.null(time_dependent_config$time_dependent_col_names))
+    walk(time_dependent_config$time_dependent_col_names,
+         ~if (!is.numeric(data[[.x]])) stop(call. = FALSE, "Currently, only numeric time-dependent variables are supported."))
 
   class(list_of_fits) <- c('cr_survreg',class(list_of_fits))
   attr(list_of_fits,'cr_survreg') <- list(time_col_name = time_col_name,
                                           event_col_name = event_col_name,
                                           data = data,
+                                          id_col_name = time_dependent_config$id_col_name,
+                                          time_dependent_col_names = time_dependent_config$time_dependent_col_names,
                                           time_lb_col_name = time_lb_col_name,
                                           time_start_col_name = time_start_col_name,
-                                          censor_level = censor_level,
-                                          method = method,
-                                          memoize = memoize)
+                                          censor_level = censor_level)
   list_of_fits
+}
+
+#' Create a `cr_survreg` model from a custom list of models
+#'
+#' Instead of using a predetermined type of survival-regression model for the submodels in
+#' cr_survreg, you can use any survival-regression model with a valid `predict` method (one that
+#' takes \code{type='survival'} and \code{times}; see \code{?predict.flexsurvreg}).
+#'
+#' @param list_of_models  A list, whose names correspond to each possible type of event. These
+#'   should correspond to the values in the \code{event_col_name} column. Each element is a
+#'   survival-regression model that can predict survival probabilities.
+#' @param data A data.frame
+#' @param time_col_name A character indicating the column-name of the 'time' column.
+#' @param event_col_name A character indicating the column-name for events. The values in this
+#'   column (either factor or character), should match the names of the names of
+#'   \code{list_of_models}, except for the value indicating censoring.
+#' @param time_lb_col_name Optional. A character indicating the column-name of the time
+#'   'lower-bound'.
+#' @param time_start_col_name Optional. A character indicating the column-name of the start
+#'   (truncation) times.
+#'
+#' @return An object of type \code{cr_survreg}, with plot and summary methods.
+#' @export
+convert_to_cr_survreg <- function(list_of_models,
+                                  data,
+                                  time_col_name,
+                                  event_col_name,
+                                  time_lb_col_name = NULL,
+                                  time_dependent_config = list(time_start_col_name = NULL, id_col_name = NULL, time_dependent_col_names = NULL)) {
+
+  stopifnot( c('time_start_col_name', 'id_col_name', 'time_dependent_col_names') %in% names(time_dependent_config))
+  time_start_col_name <- time_dependent_config$time_start_col_name
+
+  ## check on event-column:
+  if (is.factor(data[[event_col_name]])) {
+    censor_level <- levels(data[[event_col_name]])[[1]]
+    if (censor_level %in% names(list_of_models))
+      stop(call. = FALSE,
+           "The first factor-level of the event column should correspond to the level indicating censoring; ",
+           "however, ", censor_level, " was found in the names of `list_of_list_of_args`, which should only consist ",
+           "of event-types. Please re-order this factor (e.g., using the `levels` function).")
+  } else {
+    censor_level <- setdiff(data[[event_col_name]], names(list_of_models))
+    if (length(censor_level) != 1) {
+      message("The levels of '",event_col_name,"' are: ", paste(unique(data[[event_col_name]]), collapse=", "), ".")
+      message("However, the names of `list_of_models` are: ", paste(names(list_of_models), collapse=", "), ".")
+      message("It should be the case that exactly one level in the event-column is not in the `list_of_models`-- this is the level indicating censoring.")
+      if (length(censor_level)==0)
+        message("If you want to allow for a censoring-level, but indicate that this particular dataset doesn't happen to have any censoring, ",
+                "please set '", event_col_name, "' to a factor, and make the first level of this factor be the one indicating censoring.")
+      stop(call. = FALSE, "Problem with the event-colum. See above.")
+    }
+  }
+  missing_levels <- setdiff(unique(data[[event_col_name]]), c(censor_level, names(list_of_models)))
+  if (length(missing_levels)>0)
+    warning(call. = FALSE, immediate. = TRUE,
+            "The following levels of ",event_col_name ," were not used in `list_of_models`: ",
+            paste0(missing_levels, collapse = ", "))
+
+
+  if (!is.null(time_dependent_config$time_dependent_col_names))
+    walk(time_dependent_config$time_dependent_col_names,
+         ~if (!is.numeric(data[[.x]])) stop(call. = FALSE, "Currently, only numeric time-dependent variables are supported."))
+
+
+  class(list_of_models) <- c('cr_survreg',class(list_of_models))
+  attr(list_of_models,'cr_survreg') <- list(time_col_name = time_col_name,
+                                          event_col_name = event_col_name,
+                                          data = data,
+                                          id_col_name = time_dependent_config$id_col_name,
+                                          time_dependent_col_names = time_dependent_config$time_dependent_col_names,
+                                          time_lb_col_name = time_lb_col_name,
+                                          time_start_col_name = time_start_col_name,
+                                          censor_level = censor_level)
+  list_of_models
+
 }
 
 #' @export
@@ -393,6 +501,21 @@ summary.cr_survreg <- function(object, ...) {
 }
 
 
+#' Merge formulae
+#'
+#' @param forms List of formulae
+#' @param data Data.frame
+#'
+#' @return Merged formula
+#' @export
+merge_formulae <- function(forms, data) {
+  term_objs <- purrr::map(forms, ~terms(.x, data=data))
+  covnames <- unique(purrr::flatten_chr( purrr::map(term_objs, ~attr(.x,'term.labels')) ))
+  cov_formula_char <- if (length(covnames)==0) "1" else paste0(collapse = " + ", covnames)
+  out <- as.formula(paste0("~", cov_formula_char))
+  environment(out) <- environment(forms[[1]])
+  out
+}
 
 #' Create a tidy-surv object for an object of class \code{cr_survreg}
 #'
@@ -410,96 +533,183 @@ summary.cr_survreg <- function(object, ...) {
 #'
 tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
                                 time_period = NULL,
-                                other_vars_fun = function(x) mean(x, na.rm=TRUE),
+                                id_col_name = NULL, time_dependent_vars = NULL,
                                 ...) {
 
   if (is.null(newdata))
     newdata <- attr(object, "cr_survreg")$data
+  newdata <- ungroup(newdata)
 
-  terms_chars <- unique(purrr::flatten_chr(purrr::map(.x = object, .f = ~attr(delete.response(terms(.x)), "term.labels"))))
-  df_mf <- model.frame(reformulate(terms_chars), data = newdata, na.action = na.pass)
+  ## create model-frame, mapping:
+  forms <- map(map(map(object,terms), delete.response), formula)
+  full_formula <- merge_formulae(forms, data = newdata)
+  terms_mapper <- get_terms_mapper(formula = full_formula, data = newdata)
+  model_frame <- model.frame(formula = full_formula, data = newdata, na.action=na.pass)
+  numeric_lgl <- map_lgl(model_frame, is.numeric)
+  from_mf_to_od <- terms_mapper(model_frame_cols = names(numeric_lgl))
+  vars_to_add_to_group <- names(which(!numeric_lgl))
+  group_vars <- unique(c(group_vars, vars_to_add_to_group))
+  vars_to_add_to_group <- setdiff(vars_to_add_to_group, unique(flatten_chr(from_mf_to_od)))
 
-  df_mapping <- purrr::map_df(object, ~get_terms_mappings(terms(.x), data = newdata), .id = 'sub_model')
+  ## identify non-numeric variables (can't be collapsed)
+  # we have to do collapsing on the original data (not model-frame),
+  # because the former is what `predict` takes. but we can identify
+  # rows to group-by with the model-frame.
+  df_covariates <- bind_cols(
+    newdata[, unique(c(group_vars, flatten_chr(from_mf_to_od))), drop=FALSE],
+    model_frame[,vars_to_add_to_group,drop=FALSE])
 
-  df_all_covs <- newdata[, unique(c(group_vars, df_mapping$variable_name)), drop = FALSE]
-
-  # add any factors:
-  # to do: this isn't very robust (e.g., misses AsIs). make better
-  df_to_add <- df_mapping %>% filter(term_class%in%c('factor','character'), !is.element(variable_name, group_vars))
-  if (nrow(df_to_add)>0)
-    for (i in seq_len(nrow(df_to_add))) {
-      this_add <- df_to_add$column_name_in_mf[[i]]
-      group_vars <- c(group_vars, this_add)
-      df_all_covs[[this_add]] <- df_mf[[this_add]]
-      message("Added '", df_to_add$column_name_in_mf[[i]], "' to the `group_vars` (factor).")
-    }
-
-  collapse_vars <- setdiff(colnames(df_all_covs), group_vars)
-  newdata$..rownum <- 1:nrow(newdata)
-  df_all_covs$..rownum <- 1:nrow(df_all_covs)
-  if (length(group_vars) > 0)
-    df_all_covs <- dplyr::group_by_(.data = df_all_covs, .dots = paste0("`", group_vars, "`"))
-
-  if (length(collapse_vars) > 0)
-    df_all_covs <- dplyr::mutate_at(.tbl = df_all_covs, .cols = vars(one_of(collapse_vars)), .funs = other_vars_fun)
-
-  df_all_covs <- dplyr::ungroup(df_all_covs)
-
-  ## get surv columns ---
-  event_col_name <- attr(object,'cr_survreg')$event_col_name
-  if (!is.element(event_col_name, colnames(newdata)))
-    stop(call. = FALSE, "The column '", event_col_name, "' is not in `newdata`.")
+  # deal with time-period:
+  attrs <- attr(object, 'cr_survreg')
+  if (!is.null(attrs$time_start_col_name))
+    f_lhs_char <- glue::glue("Surv(time = {time_start_col_name}, time2 = {time_col_name}, event = {event_col_name})",
+                             .envir = as.environment(attrs))
+  else
+    f_lhs_char <- glue::glue("Surv(time = {time_col_name}, event = {event_col_name})", .envir = as.environment(attrs))
+  formula_lhs <- parse(text=f_lhs_char)[[1]]
   time_col_name <- attr(object,'cr_survreg')$time_col_name
-  if (!all(df_all_covs$..rownum == newdata$..rownum))
-    stop(call. = FALSE, "Please report this error to the package maintainer.") # i'm assuming dplyr will never rearrange due to grouping...
-  df_all_covs$..rownum <- NULL
-  df_all <- dplyr::bind_cols( newdata[,c(event_col_name,time_col_name),drop=FALSE], df_all_covs )
+  if (!is.null(time_period))
+    newdata <- convert_time_cols_to_binned(data = newdata, time_period = time_period, formula_lhs = formula_lhs)
+
+  if (is.null(time_dependent_vars))
+    time_dependent_vars <- attrs$time_dependent_col_names
+  else if (is.na(time_dependent_vars)) # this explicitly overrides them
+    time_dependent_vars <- NULL
+  else
+    if (is.null(attrs$time_start_col_name))
+      stop("You've specified `time_dependent_vars`, but this model isn't in 'counting process' format ",
+           "(i.e., there was no 'time_start_col_name' found in the model-object).")
+
+  ## group by group vars, collapse all others.
+  collapse_vars <- setdiff(colnames(df_covariates), group_vars)
+  collapse_vars <- setdiff(collapse_vars, time_dependent_vars)
+  df_covariates <- rownames_to_column(df_covariates, var = '..row')
+  if (is.null(id_col_name)) id_col_name <- attrs$id_col_name
+  if (!is.null(id_col_name)) df_covariates[[id_col_name]] <- newdata[[id_col_name]]
+  if (length(group_vars)>0)
+    split_df_covs <- split(x = df_covariates[,c('..row',collapse_vars,id_col_name),drop=FALSE],
+                           f = as.list(df_covariates[,group_vars,drop=FALSE]), drop=TRUE)
+  else
+    split_df_covs <- list(df_covariates[,c('..row',collapse_vars,id_col_name),drop=FALSE])
+
+
+  if (length(collapse_vars)>0) {
+    df_collapsed <- map_df(split_df_covs,
+                           function(df_chunk) {
+                             if (!is.null(id_col_name))
+                               df_start <- df_chunk %>%
+                                 group_by_(.dots = id_col_name) %>%
+                                 summarize_at(.cols = collapse_vars, .funs = mean, na.rm=TRUE)
+                             else
+                               df_start <- df_chunk
+                             df_means <- df_start %>%
+                               summarize_at(.cols = collapse_vars, .funs = mean, na.rm=TRUE)
+                             for (col in colnames(df_means))
+                               df_chunk[[col]] <- df_means[[col]]
+                             as_data_frame(df_chunk)
+                           })
+    df_collapsed <- left_join(x = df_covariates[,c('..row',group_vars),drop=FALSE],
+                              y = df_collapsed,
+                              by = '..row')
+  } else {
+    df_collapsed <- left_join(x = df_covariates[,c('..row',group_vars),drop=FALSE],
+                              y = bind_rows(split_df_covs),
+                              by = '..row')
+  }
+  all_times <- newdata[[time_col_name]]
+  if (!is.null(attrs$time_start_col_name)) all_times <- c(all_times, newdata[[attrs$time_start_col_name]])
+  if (is.null(time_period))
+    unique_times <- sort(unique(all_times))
+  else
+    unique_times <- full_seq(x = all_times, period = time_period)
+
+  ## if there are time-dependent covariates, we'll be using the averages
+  # for each time-point, not overall averages. these will be calculated now,
+  # then used in prediction in the next step
+  if (!is.null(time_dependent_vars)) {
+    if (is.null(time_period))
+      stop(call. = FALSE, "If there are time-dependent covariates, you must specify `time_period`.")
+    df_td <- newdata[,c(time_dependent_vars,id_col_name,attrs$time_start_col_name),drop=FALSE]
+    df_grid <- crossing(ID = unique(df_td[[id_col_name]]),TIME = unique_times)
+    df_grid[[id_col_name]] <- df_grid$ID; df_grid[[attrs$time_start_col_name]] <- df_grid$TIME;
+    df_grid$ID <- df_grid$TIME <- NULL
+    df_td_full <- left_join(df_grid, df_td, by = c(id_col_name, attrs$time_start_col_name))
+    df_max_times <- newdata %>%
+      group_by_(.dots = id_col_name) %>%
+      summarize_(.dots = list(..max = lazyeval::interp(~max(TIME), TIME = as.name(time_col_name))))
+    df_td_full <- left_join(df_td_full, df_max_times, by = id_col_name)
+    df_td_full <- df_td_full[df_td_full[[attrs$time_start_col_name]] <= df_td_full$..max, ]
+    df_td_full <- arrange_(df_td_full, .dots = c(id_col_name, attrs$time_start_col_name))
+    df_td_full <- df_td_full %>%
+      group_by_(.dots = id_col_name) %>%
+      mutate_at(.cols = time_dependent_vars, .funs = zoo::na.locf) %>%
+      ungroup()
+
+    if (length(group_vars)>0) {
+      if (any(group_vars %in% time_dependent_vars))
+        stop(call. = FALSE, "None of the `group_vars` can be time-dependent variables.")
+      df_id_group_vals <- distinct(df_covariates[,c(id_col_name, group_vars),drop=FALSE])
+      df_td_full <- left_join(x = df_td_full, y = df_id_group_vals, by = id_col_name)
+    }
+    df_td_values <- df_td_full %>%
+      group_by_(.dots = c(attrs$time_start_col_name, group_vars)) %>%
+      summarize_at(.cols = time_dependent_vars, .funs = mean, na.rm=TRUE) %>%
+      ungroup()
+  }
 
   # Create tidysurv Object ---
-  censor_level <- attr(object,'cr_survreg')$censor_level
-  if (!is.factor(newdata[[event_col_name]]))
-    df_all[[event_col_name]] <- factor(df_all[[event_col_name]], levels = c(censor_level, names(object)))
-  form_lhs <- as.formula(paste0("Surv(time = `", time_col_name, "`, event = `", event_col_name, "`) ~ ."))
-
-  if (length(group_vars)>0)
-    df_tidysurv <- tidysurv(update(form_lhs, reformulate(paste0("`",group_vars,"`"))), data = df_all, time_period = time_period)
+  if (!is.null(attrs$time_start_col_name))
+    df_collapsed_w_resp <- bind_cols(df_collapsed,
+                                 newdata[,flatten_chr(attrs[c('time_col_name','event_col_name','time_start_col_name')]),drop=FALSE])
   else
-    df_tidysurv <- tidysurv(update(form_lhs, .~1), data = df_all, time_period = time_period)
+    df_collapsed_w_resp <- bind_cols(df_collapsed,
+                                 newdata[,flatten_chr(attrs[c('time_col_name','event_col_name')]),drop=FALSE])
+
+  ts_form <- as.formula(paste(f_lhs_char, "~1"))
+  if (length(group_vars)>0)
+    ts_form <- update(ts_form, reformulate(paste0("`",group_vars,"`")))
+  df_tidysurv <- tidysurv(ts_form, data = df_collapsed_w_resp, time_period = time_period)
 
   # Get Predictions ---
-  times <- sort(unique(df_tidysurv$time))
-  df_small <- dplyr::distinct(df_all_covs)
-  df_small$..rowname <- as.character(1:nrow(df_small))
-  if (any(is.na(df_small)))
-    stop(call. = FALSE, "NAs currently not allowed for this function. Please report this issue to the package maintainer.")
+  if (!is.null(id_col_name)) df_collapsed[[id_col_name]] <- NULL
+  if (ncol(df_collapsed)==1) {
+    df_small <- data_frame(..row = '1')
+  } else {
+    df_small <- dplyr::distinct(select(df_collapsed, -`..row`))
+    df_small <- rownames_to_column(df_small, var = "..row")
+  }
+  df_small <- na.exclude(df_small)
+
+  df_expanded <- tidyr::crossing(df_small, time = unique_times)
+  if (!is.null(time_dependent_vars))
+    df_expanded <- left_join(df_expanded, df_td_values,
+                             by = c(`time` = attrs$time_start_col_name, group_vars))
+  if (length(group_vars)>0)
+    df_expanded <- group_by_(.data = df_expanded, .dots = group_vars)
+  df_expanded <- df_expanded %>%
+    mutate(time_lagged = lag(time, default = 0)) %>%
+    ungroup() %>%
+    as_data_frame()
   list_of_fitted_dfs <- purrr::map2(
     .x = object,
     .y = names(object),
     .f = function(fit, event_name) {
-      df_expanded <- tidyr::crossing(df_small, time = times)
-      df_expanded[[event_name]] <-
-        predict(fit, newdata = df_expanded,  type='survival', times = df_expanded$time)
-      dplyr::as_data_frame(df_expanded[,c('time',event_name,'..rowname')])
-    })
-  df_covs_with_surv <- dplyr::left_join(df_small,
-                                         purrr::reduce(list_of_fitted_dfs,dplyr::left_join, by=c('time','..rowname')),
-                                         by = '..rowname')
-
-  df_covs_with_surv$surv <- purrr::reduce(.x = df_covs_with_surv[names(object)], .f = `*`)
-
-  df_covs_with_rate <- df_covs_with_surv %>%
-    split(.$..rowname) %>%
-    purrr::map_df(.f = function(df_chunk) {
-      df_chunk[names(object)] <- purrr::map(
-        .x = names(object),
-        .f = function(event_name) {
-          1 - df_chunk[[event_name]]/lag(df_chunk[[event_name]], default = 1)
-        })
-      return(df_chunk)
+      surv <- predict(fit, newdata = df_expanded,  type='survival', times = df_expanded$time)
+      surv_lagged <- predict(fit, newdata = df_expanded,  type='survival', times = df_expanded$time_lagged)
+      df_expanded[[event_name]] <- 1-surv/surv_lagged
+      dplyr::as_data_frame(df_expanded[,c('time',event_name,'..row')])
     })
 
+  df_covs_with_rate <- dplyr::left_join(df_small,
+                                         purrr::reduce(list_of_fitted_dfs,dplyr::left_join, by=c('time','..row')),
+                                         by = '..row')
+  df_covs_with_rate$all_churn <- rowSums(df_covs_with_rate[,names(object),drop=FALSE], na.rm = FALSE)
+  df_covs_with_rate <- df_covs_with_rate %>%
+    group_by(..row) %>%
+    mutate(surv = cumprod(1-all_churn), all_churn=NULL) %>%
+    ungroup()
   df_covs_with_inc <- df_covs_with_rate %>%
-    split(.$..rowname) %>%
+    split(.$..row) %>%
     purrr::map_df(.f = function(df_chunk) {
       df_chunk[names(object)] <- purrr::map(
         .x = names(object),
@@ -530,7 +740,7 @@ tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
 }
 
 #' @export
-predict.cr_survreg <- function(object, newdata = NULL, times, type = 'hazard', start = NULL, ...) {
+predict.cr_survreg <- function(object, newdata = NULL, times, type = 'survival', start = NULL, ...) {
   if (is.null(newdata))
     newdata <- attr(object,'cr_survreg')$data
   outl <- purrr::map(object, ~do.call(predict,
@@ -557,7 +767,7 @@ plot_coefs <- function(object, ...) {
 #'
 #' @export
 plot_coefs.cr_survreg <- function(object, ...) {
-  purrr::map(object, plot_coefs)
+  purrr::map(object, plot_coefs, ... = ...)
 }
 
 #' Create Surv object of type 'interval' given upper and lower bounds of event-times.
@@ -609,25 +819,63 @@ tidy.survfit <- function (x, ...)
   ret
 }
 
-#' Get mapping from variables/column to formula terms
+#' Get a function which maps from column names to model-terms and vice versa
 #'
-#' @param terms A 'terms' object
-#' @param data A dataframe
+#' @param formula The formula to be passed to model.frame
+#' @param data The data.frame
+#' @param ... Arguments to be passed to \code{stats::model.matrix}
 #'
-#' @return A tidy dataframe with mapping.
+#' @return A function that gives the model-term(s) for each original-column, or gives the
+#'   original-column(s) for each model-term. You can also get original column-names from model-frame
+#'   names (e.g., instead of specific levels of factor, just factor(variable) gets mapped to
+#'   variable).
 #' @export
-get_terms_mappings <- function(terms, data) {
-  term_ob <- delete.response(terms)
+get_terms_mapper <- function(formula, data, ...) {
+  # remove response:
+  if (length(formula)>2) formula[[2]] <- NULL
+  model_frame <- model.frame(formula = formula, data, na.action=na.pass)
+  if (ncol(model_frame)==0) {
+    from_mm_to_od <- from_od_to_mm <- from_mf_to_od <- list()
+  } else {
+    model_matrix <- do.call(model.matrix, c(list(terms(model_frame), data=model_frame), list(...)))
 
-  mapping_mat <- attr(term_ob, 'factors')
-  mf_col_names_with_backticks <- rownames(mapping_mat)
-  original_col_names <- purrr::map_chr(.x = mf_col_names_with_backticks, ~all.vars(lazyeval::as.lazy(.x)$expr))
+    cols_in_mm <- colnames(model_matrix)
+    fact_mat <- attr(terms(model_frame),'factors')
+    cols_in_mf <- map(attr(model_matrix,'assign'),
+                      function(assign_idx) row.names(fact_mat)[1==fact_mat[,assign_idx,drop=TRUE]])
 
-  out <- data_frame(variable_name = original_col_names,
-                    terms_with_variable = mf_col_names_with_backticks,
-                    column_name_in_mf = stringr::str_replace(string = mf_col_names_with_backticks, pattern = "`", replacement = ""))
+    ##
+    is_null_lgl <- map_lgl(cols_in_mf, is.null)
+    cols_in_od <- vector(mode = 'list', length = length(is_null_lgl))
+    if (any(!is_null_lgl)) {
+      cols_in_od[!is_null_lgl] <- map(
+        .x = cols_in_mf[!is_null_lgl],
+        .f = function(vec_of_mm_cols) flatten_chr(map(vec_of_mm_cols, ~all.vars(parse(text = .x)[[1]]))))
+      cols_in_od[!is_null_lgl] <- map(cols_in_od[!is_null_lgl], ~.x[.x%in%colnames(data)])
+    }
 
-  model_frame <- model.frame(term_ob,data=data)
-  out$term_class <- purrr::map_chr(.x = out$column_name_in_mf, .f = ~paste0(class(model_frame[[.x]]), collapse = "; "))
-  out
+    ##
+    from_mf_to_od <- map(colnames(model_frame), ~all.vars(parse(text = .x)[[1]])) %>%
+      map(~.x[.x%in%colnames(data)])
+    names(from_mf_to_od) <- colnames(model_frame)
+
+    ##
+    from_mm_to_od <- setNames(nm = cols_in_mm, cols_in_od)
+    from_od_to_mm <- data_frame(model_mat_col = cols_in_mm, original_col = cols_in_od) %>%
+      unnest() %>%
+      group_by(original_col) %>%
+      do(model_mat_cols = .$model_mat_col) %>%
+      ungroup() %>%
+      deframe()
+  }
+
+  function(original_cols = NULL, model_mat_cols = NULL, model_frame_cols = NULL) {
+    if (!is.null(model_mat_cols))
+      from_mm_to_od[model_mat_cols]
+    else if (!is.null(original_cols))
+      from_od_to_mm[original_cols]
+    else if (!is.null(model_frame_cols))
+      from_mf_to_od[model_frame_cols]
+  }
 }
+
