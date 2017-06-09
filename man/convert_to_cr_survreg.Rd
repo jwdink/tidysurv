@@ -24,8 +24,10 @@ column (either factor or character), should match the names of the names of
 \item{time_lb_col_name}{Optional. A character indicating the column-name of the time
 'lower-bound'.}
 
-\item{time_start_col_name}{Optional. A character indicating the column-name of the start
-(truncation) times.}
+\item{time_dependent_config}{If your data is in a 'counting process' format (i.e., there are
+multiple rows per 'person', with a 'start' column specifying right-truncation), you should
+supply this. A list with three entries: `time_start_col_name`, `id_col_name`, and
+`time_dependent_col_names`.}
 }
 \value{
 An object of type \code{cr_survreg}, with plot and summary methods.

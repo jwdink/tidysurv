@@ -9,17 +9,20 @@
 #' @import flexsurv
 #' @import survival
 #'
+#' @importFrom matrixStats rowCollapse
+#' @importFrom glue glue
 #' @importFrom tibble rownames_to_column
 #' @importFrom broom tidy
 #' @importFrom purrr map map2 pmap map_dbl map_chr map_lgl
 #'             map2_chr map2_dbl map2_lgl transpose flatten_chr flatten_dbl flatten_lgl
-#'             walk walk2
+#'             walk walk2 map_df map2_df
 #' @importFrom graphics plot
 #' @importFrom stats sd terms update integrate delete.response
 #'             as.formula coef fitted glm lm median na.omit poly
 #'             predict var quantile model.response model.frame
 #'             na.pass na.exclude na.fail model.matrix model.weights
-#'             .getXlevels .checkMFClasses reformulate
+#'             .getXlevels .checkMFClasses reformulate binom.test formula
+#'             setNames
 #' @importFrom grDevices dev.off pdf
 #'
 #' @docType package
@@ -293,12 +296,14 @@ update_aes <- function(old_aes, new_aes) {
 #' @param data A dataframe.
 #' @param list_of_list_of_args A list, whose names correspond to each possible type of event. These
 #'   should correspond to the values in the \code{event_col_name} column. The elements of this list
-#'   are themselves lists— arguments to be passed to the survival-regression modelling function (as
-#'   specified by \code{method}— currently only \code{flexsurvreg} is supported).
+#'   are themselves lists- arguments to be passed to the survival-regression modelling function (as
+#'   specified by \code{method}- currently only \code{flexsurvreg} is supported).
 #' @param time_lb_col_name Optional. A character indicating the column-name of the time
 #'   'lower-bound'. See the vignette for details.
-#' @param time_start_col_name Optional. A character indicating the column-name of the start
-#'   (truncation) times. See the vignette for details.
+#' @param time_dependent_config If your data is in a 'counting process' format (i.e., there are
+#'   multiple rows per 'person', with a 'start' column specifying right-truncation), you should
+#'   supply this. A list with three entries: `time_start_col_name`, `id_col_name`, and
+#'   `time_dependent_col_names`.
 #' @param method A character string naming the function to be called for survival-regression
 #'   modelling. Currently only supports \code{flexsurvreg}.
 #'
@@ -365,7 +370,6 @@ cr_survreg <- function(time_col_name,
     .x = list_of_list_of_args,
     .y = names(list_of_list_of_args),
     function(args, this_event_name) {
-
       event_char <- paste0("as.integer(`", event_col_name, "`", "=='", this_event_name, "')")
       events_vec <- lazyeval::lazy_eval(as.lazy(event_char), data = data)
       if (all(!events_vec, na.rm = TRUE))
@@ -428,8 +432,10 @@ cr_survreg <- function(time_col_name,
 #'   \code{list_of_models}, except for the value indicating censoring.
 #' @param time_lb_col_name Optional. A character indicating the column-name of the time
 #'   'lower-bound'.
-#' @param time_start_col_name Optional. A character indicating the column-name of the start
-#'   (truncation) times.
+#' @param time_dependent_config If your data is in a 'counting process' format (i.e., there are
+#'   multiple rows per 'person', with a 'start' column specifying right-truncation), you should
+#'   supply this. A list with three entries: `time_start_col_name`, `id_col_name`, and
+#'   `time_dependent_col_names`.
 #'
 #' @return An object of type \code{cr_survreg}, with plot and summary methods.
 #' @export
@@ -523,9 +529,12 @@ merge_formulae <- function(forms, data) {
 #' @param newdata Optional. A dataframe.
 #' @param group_vars A character-vector specifying column(s) to group-by when creating the
 #'   survival-curves.
-#' @param other_vars_fun All covariates not in \code{group_vars} will have this function applied to
-#'   them. Should be a function that takes a numeric vector and returns a numeric vector with a single unique value.
-#'   Defaults to `mean` with na-removal.
+#' @param time_period This bins the time-values into groups of this width, which is needed for
+#'   plotting rates and time-dependent variables.
+#' @param id_col_name Character-string of id-column. Only needed if originally supplied value
+#'   doesn't work for `newdata`
+#' @param time_dependent_vars Character-strings for time-dependent covariates. Instead of taking the
+#'   overall mean, takes the mean at each time-point.
 #' @param ... Ignored.
 #'
 #' @return An object of class \code{cr_survreg}
@@ -642,7 +651,7 @@ tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
     df_td_full <- arrange_(df_td_full, .dots = c(id_col_name, attrs$time_start_col_name))
     df_td_full <- df_td_full %>%
       group_by_(.dots = id_col_name) %>%
-      mutate_at(.cols = time_dependent_vars, .funs = zoo::na.locf) %>%
+      fill_(fill_cols = time_dependent_vars, .direction = 'down') %>%
       ungroup()
 
     if (length(group_vars)>0) {
@@ -753,18 +762,18 @@ predict.cr_survreg <- function(object, newdata = NULL, times, type = 'survival',
 
 #' Plot coefficients
 #'
+#' @param object An object
+#' @param ... Passed to methods
+#'
+#' @return A ggplot object
+#'
 #' @export
 plot_coefs <- function(object, ...) {
   UseMethod('plot_coefs')
 }
 
 #' @describeIn plot_coefs
-#' Plot coefficients of `flexsurvreg` model
-#'
-#' @param object An object of type \code{cr_survreg}
-#' @param ... Ignored
-#' @return A ggplot object
-#'
+#' Plot coefficients of `cr_survreg` model
 #' @export
 plot_coefs.cr_survreg <- function(object, ...) {
   purrr::map(object, plot_coefs, ... = ...)

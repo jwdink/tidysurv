@@ -5,10 +5,6 @@ terms.flexsurvreg <- function(x, ...) {
 
 #' @describeIn plot_coefs
 #' Plot coefficients of `flexsurvreg` model
-#'
-#' @param object An object of type \code{flexsurvreg}
-#' @param ... Ignored
-#' @return A ggplot object
 #' @export
 plot_coefs.flexsurvreg <- function(object, ...) {
   df_terms <-
@@ -113,9 +109,9 @@ add.covs <- function (x, pars, beta, X, transform = FALSE)
 #'
 #' @param object Object of type \code{flexsurvreg}.
 #' @param newdata A dataframe to apply predictions to.
-#' @param type What type of prediction? Options are "survival", "cumhaz", and "hazard".
-#' @param t A numeric vector of times for which to return predictions, with length equal to
+#' @param times A numeric vector of times for which to return predictions, with length equal to
 #'   \code{nrow(newdata)}
+#' @param type What type of prediction? Options are "survival", "cumhaz", and "hazard".
 #' @param start Optional. A numeric vector of start (truncation) times.
 #' @param ... Ignored.
 #'

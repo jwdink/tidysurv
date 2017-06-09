@@ -20,7 +20,9 @@ Imports:
   ggplot2 (>= 2.1.0),
   broom (>= 0.4.2),
   purrr (>= 0.2.2),
-  tibble (>= 1.2)
+  tibble (>= 1.2),
+  matrixStats (>= 0.52.2),
+  glue (>= 1.0.0)
 Depends:
   survival (>= 2.40-1),
   flexsurv (>= 1.0.0)

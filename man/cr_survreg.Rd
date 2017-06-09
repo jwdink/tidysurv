@@ -20,17 +20,19 @@ except for the value indicating censoring.}
 
 \item{list_of_list_of_args}{A list, whose names correspond to each possible type of event. These
 should correspond to the values in the \code{event_col_name} column. The elements of this list
-are themselves lists— arguments to be passed to the survival-regression modelling function (as
-specified by \code{method}— currently only \code{flexsurvreg} is supported).}
+are themselves lists- arguments to be passed to the survival-regression modelling function (as
+specified by \code{method}- currently only \code{flexsurvreg} is supported).}
 
 \item{time_lb_col_name}{Optional. A character indicating the column-name of the time
 'lower-bound'. See the vignette for details.}
 
+\item{time_dependent_config}{If your data is in a 'counting process' format (i.e., there are
+multiple rows per 'person', with a 'start' column specifying right-truncation), you should
+supply this. A list with three entries: `time_start_col_name`, `id_col_name`, and
+`time_dependent_col_names`.}
+
 \item{method}{A character string naming the function to be called for survival-regression
 modelling. Currently only supports \code{flexsurvreg}.}
-
-\item{time_start_col_name}{Optional. A character indicating the column-name of the start
-(truncation) times. See the vignette for details.}
 }
 \value{
 An object of type \code{cr_survreg}, with plot and summary methods.

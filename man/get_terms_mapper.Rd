@@ -4,12 +4,14 @@
 \alias{get_terms_mapper}
 \title{Get a function which maps from column names to model-terms and vice versa}
 \usage{
-get_terms_mapper(formula, data)
+get_terms_mapper(formula, data, ...)
 }
 \arguments{
 \item{formula}{The formula to be passed to model.frame}
 
 \item{data}{The data.frame}
+
+\item{...}{Arguments to be passed to \code{stats::model.matrix}}
 }
 \value{
 A function that gives the model-term(s) for each original-column, or gives the

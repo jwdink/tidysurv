@@ -15,11 +15,16 @@
 \item{group_vars}{A character-vector specifying column(s) to group-by when creating the
 survival-curves.}
 
-\item{...}{Ignored.}
+\item{time_period}{This bins the time-values into groups of this width, which is needed for
+plotting rates and time-dependent variables.}
 
-\item{other_vars_fun}{All covariates not in \code{group_vars} will have this function applied to
-them. Should be a function that takes a numeric vector and returns a numeric vector with a single unique value.
-Defaults to `mean` with na-removal.}
+\item{id_col_name}{Character-string of id-column. Only needed if originally supplied value
+doesn't work for `newdata`}
+
+\item{time_dependent_vars}{Character-strings for time-dependent covariates. Instead of taking the
+overall mean, takes the mean at each time-point.}
+
+\item{...}{Ignored.}
 }
 \value{
 An object of class \code{cr_survreg}

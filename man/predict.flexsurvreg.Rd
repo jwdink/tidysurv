@@ -12,14 +12,14 @@
 
 \item{newdata}{A dataframe to apply predictions to.}
 
+\item{times}{A numeric vector of times for which to return predictions, with length equal to
+\code{nrow(newdata)}}
+
 \item{type}{What type of prediction? Options are "survival", "cumhaz", and "hazard".}
 
 \item{start}{Optional. A numeric vector of start (truncation) times.}
 
 \item{...}{Ignored.}
-
-\item{t}{A numeric vector of times for which to return predictions, with length equal to
-\code{nrow(newdata)}}
 }
 \value{
 A numeric vector of predictions

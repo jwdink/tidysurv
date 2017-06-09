@@ -13,17 +13,11 @@ plot_coefs(object, ...)
 \method{plot_coefs}{cr_survreg}(object, ...)
 }
 \arguments{
-\item{object}{An object of type \code{flexsurvreg}}
+\item{object}{An object}
 
-\item{...}{Ignored}
-
-\item{object}{An object of type \code{cr_survreg}}
-
-\item{...}{Ignored}
+\item{...}{Passed to methods}
 }
 \value{
-A ggplot object
-
 A ggplot object
 }
 \description{
@@ -33,6 +27,6 @@ Plot coefficients
 \itemize{
 \item \code{flexsurvreg}: Plot coefficients of `flexsurvreg` model
 
-\item \code{cr_survreg}: Plot coefficients of `flexsurvreg` model
+\item \code{cr_survreg}: Plot coefficients of `cr_survreg` model
 }}
 
