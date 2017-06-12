@@ -535,7 +535,7 @@ merge_formulae <- function(forms, data) {
 #'   doesn't work for `newdata`
 #' @param time_dependent_vars Character-strings for time-dependent covariates. Instead of taking the
 #'   overall mean, takes the mean at each time-point.
-#' @param ... Ignored.
+#' @param ... Passed to tidysurv.formula, which in turn passes these args to \code{survfit}
 #'
 #' @return An object of class \code{cr_survreg}
 #' @export
@@ -543,6 +543,7 @@ merge_formulae <- function(forms, data) {
 tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
                                 time_period = NULL,
                                 id_col_name = NULL, time_dependent_vars = NULL,
+                                max_num_levels = 200,
                                 ...) {
 
   if (is.null(newdata))
@@ -677,7 +678,7 @@ tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
   ts_form <- as.formula(paste(f_lhs_char, "~1"))
   if (length(group_vars)>0)
     ts_form <- update(ts_form, reformulate(paste0("`",group_vars,"`")))
-  df_tidysurv <- tidysurv(ts_form, data = df_collapsed_w_resp, time_period = time_period)
+  df_tidysurv <- tidysurv(ts_form, data = df_collapsed_w_resp, time_period = time_period, max_num_levels=max_num_levels,...=...)
 
   # Get Predictions ---
   if (!is.null(id_col_name)) df_collapsed[[id_col_name]] <- NULL
