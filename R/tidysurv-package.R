@@ -558,8 +558,6 @@ tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
   numeric_lgl <- map_lgl(model_frame, is.numeric)
   from_mf_to_od <- terms_mapper(model_frame_cols = names(numeric_lgl))
   vars_to_add_to_group <- names(which(!numeric_lgl))
-  group_vars <- unique(c(group_vars, vars_to_add_to_group))
-  vars_to_add_to_group <- setdiff(vars_to_add_to_group, unique(flatten_chr(from_mf_to_od)))
 
   ## identify non-numeric variables (can't be collapsed)
   # we have to do collapsing on the original data (not model-frame),
@@ -568,6 +566,8 @@ tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
   df_covariates <- bind_cols(
     newdata[, unique(c(group_vars, flatten_chr(from_mf_to_od))), drop=FALSE],
     model_frame[,vars_to_add_to_group,drop=FALSE])
+
+  group_vars <- unique(c(group_vars, vars_to_add_to_group))
 
   # deal with time-period:
   attrs <- attr(object, 'cr_survreg')
@@ -578,6 +578,9 @@ tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
     f_lhs_char <- glue::glue("Surv(time = {time_col_name}, event = {event_col_name})", .envir = as.environment(attrs))
   formula_lhs <- parse(text=f_lhs_char)[[1]]
   time_col_name <- attr(object,'cr_survreg')$time_col_name
+  if (!is.factor(newdata[[attrs$event_col_name]]))
+    newdata[[attrs$event_col_name]] <- relevel(as.factor(newdata[[attrs$event_col_name]]),
+                                                           ref = attrs$censor_level)
   if (!is.null(time_period))
     newdata <- convert_time_cols_to_binned(data = newdata, time_period = time_period, formula_lhs = formula_lhs)
 
@@ -637,6 +640,8 @@ tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
   # for each time-point, not overall averages. these will be calculated now,
   # then used in prediction in the next step
   if (!is.null(time_dependent_vars)) {
+    # TO DO: degenerative behavior when a variable doesn't actually vary with time
+    # might help you understand if this is really doing what it should.
     if (is.null(time_period))
       stop(call. = FALSE, "If there are time-dependent covariates, you must specify `time_period`.")
     df_td <- newdata[,c(time_dependent_vars,id_col_name,attrs$time_start_col_name),drop=FALSE]
@@ -678,7 +683,7 @@ tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
   ts_form <- as.formula(paste(f_lhs_char, "~1"))
   if (length(group_vars)>0)
     ts_form <- update(ts_form, reformulate(paste0("`",group_vars,"`")))
-  df_tidysurv <- tidysurv(ts_form, data = df_collapsed_w_resp, time_period = time_period, max_num_levels=max_num_levels,...=...)
+    df_tidysurv <- tidysurv(ts_form, data = df_collapsed_w_resp, time_period = time_period, max_num_levels=max_num_levels,...=...)
 
   # Get Predictions ---
   if (!is.null(id_col_name)) df_collapsed[[id_col_name]] <- NULL
