@@ -366,6 +366,7 @@ cr_survreg <- function(time_col_name,
             "The following levels of ",event_col_name ," were not used in `list_of_list_of_args`: ",
             paste0(missing_levels, collapse = ", "))
 
+
   list_of_fits <- purrr::map2(
     .x = list_of_list_of_args,
     .y = names(list_of_list_of_args),
@@ -393,10 +394,11 @@ cr_survreg <- function(time_col_name,
         update_char <- paste(paste0(deparse(the_call), collapse=""), "~.")
       }
       stopifnot( 'formula' %in% names(args) )
-      args$formula <- update(args$formula, stats::as.formula(update_char))
-      args$data <- data
-      fit <- do.call( method , args = args)
-      fit$call$data <- NULL
+      the_call <- as.call(c(list(parse(text = method)[[1]]),args))
+      the_call$formula <- update(args$formula, stats::as.formula(update_char))
+      the_call$data <- substitute(data, env = parent.frame(n=2))
+      the_call <- lazyeval::call_standardise(the_call)
+      fit <- eval(expr = the_call, envir = parent.frame(n=2))
       fit
     })
 
@@ -515,12 +517,13 @@ summary.cr_survreg <- function(object, ...) {
 #' @return Merged formula
 #' @export
 merge_formulae <- function(forms, data) {
-  term_objs <- purrr::map(forms, ~terms(.x, data=data))
-  covnames <- unique(purrr::flatten_chr( purrr::map(term_objs, ~attr(.x,'term.labels')) ))
-  cov_formula_char <- if (length(covnames)==0) "1" else paste0(collapse = " + ", covnames)
-  out <- as.formula(paste0("~", cov_formula_char))
-  environment(out) <- environment(forms[[1]])
-  out
+  list_of_term_labels <- purrr::map(purrr::map(forms, terms, data=data), attr, 'term.labels')
+  term_labels_unique <- unique(purrr::flatten_chr(list_of_term_labels))
+  if (length(term_labels_unique)>0) form_out <- reformulate(term_labels_unique)
+  else form_out <- ~1
+  lazyeval::f_lhs(form_out) <- lazyeval::f_lhs(forms[[1]])
+  environment(form_out) <- environment(forms[[1]])
+  form_out
 }
 
 #' Create a tidy-surv object for an object of class \code{cr_survreg}
