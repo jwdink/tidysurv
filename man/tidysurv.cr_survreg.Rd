@@ -5,7 +5,8 @@
 \title{Create a tidy-surv object for an object of class \code{cr_survreg}}
 \usage{
 \method{tidysurv}{cr_survreg}(object, newdata = NULL, group_vars = NULL,
-  time_period = NULL, id_col_name = NULL, time_dependent_vars = NULL, ...)
+  time_period = NULL, id_col_name = NULL, time_dependent_vars = NULL,
+  max_num_levels = 200, ...)
 }
 \arguments{
 \item{object}{An object of class \code{cr_survreg}}
@@ -24,7 +25,11 @@ doesn't work for `newdata`}
 \item{time_dependent_vars}{Character-strings for time-dependent covariates. Instead of taking the
 overall mean, takes the mean at each time-point.}
 
-\item{...}{Ignored.}
+\item{max_num_levels}{If any 'group_vars' are numeric this can lead to hundreds of distinct
+curves (often this is uninentional). This argument ensures that you don't accidentally eat up
+time computing these curves when you didnt mean to. Default is 200.}
+
+\item{...}{Passed to tidysurv.formula, which in turn passes these args to \code{survfit}}
 }
 \value{
 An object of class \code{cr_survreg}

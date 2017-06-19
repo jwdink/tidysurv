@@ -22,7 +22,7 @@
 #'             predict var quantile model.response model.frame
 #'             na.pass na.exclude na.fail model.matrix model.weights
 #'             .getXlevels .checkMFClasses reformulate binom.test formula
-#'             setNames
+#'             setNames relevel
 #' @importFrom grDevices dev.off pdf
 #'
 #' @docType package
@@ -538,6 +538,9 @@ merge_formulae <- function(forms, data) {
 #'   doesn't work for `newdata`
 #' @param time_dependent_vars Character-strings for time-dependent covariates. Instead of taking the
 #'   overall mean, takes the mean at each time-point.
+#' @param max_num_levels  If any 'group_vars' are numeric this can lead to hundreds of distinct
+#'   curves (often this is uninentional). This argument ensures that you don't accidentally eat up
+#'   time computing these curves when you didnt mean to. Default is 200.
 #' @param ... Passed to tidysurv.formula, which in turn passes these args to \code{survfit}
 #'
 #' @return An object of class \code{cr_survreg}
