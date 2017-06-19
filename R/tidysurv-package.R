@@ -398,7 +398,7 @@ cr_survreg <- function(time_col_name,
       the_call$formula <- update(args$formula, stats::as.formula(update_char))
       the_call$data <- substitute(data, env = parent.frame(n=2))
       the_call <- lazyeval::call_standardise(the_call)
-      fit <- eval(expr = the_call, envir = parent.frame(n=2))
+      fit <- eval(expr = the_call, envir = parent.frame(n=3))
       fit
     })
 
