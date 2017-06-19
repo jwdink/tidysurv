@@ -26,3 +26,4 @@ Imports:
 Depends:
   survival (>= 2.40-1),
   flexsurv (>= 1.0.0)
+Remotes: tidyverse/glue
