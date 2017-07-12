@@ -618,11 +618,11 @@ tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
                              if (!is.null(id_col_name))
                                df_start <- df_chunk %>%
                                  group_by_(.dots = id_col_name) %>%
-                                 summarize_at(.cols = collapse_vars, .funs = mean, na.rm=TRUE)
+                                 summarize_at(.vars = collapse_vars, .funs = mean, na.rm=TRUE)
                              else
                                df_start <- df_chunk
                              df_means <- df_start %>%
-                               summarize_at(.cols = collapse_vars, .funs = mean, na.rm=TRUE)
+                               summarize_at(.vars = collapse_vars, .funs = mean, na.rm=TRUE)
                              for (col in colnames(df_means))
                                df_chunk[[col]] <- df_means[[col]]
                              as_data_frame(df_chunk)
