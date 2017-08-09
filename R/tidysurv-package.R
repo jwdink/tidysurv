@@ -569,8 +569,9 @@ tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
   # we have to do collapsing on the original data (not model-frame),
   # because the former is what `predict` takes. but we can identify
   # rows to group-by with the model-frame.
+  orig_cols <- purrr::flatten_chr(from_mf_to_od)
   df_covariates <- bind_cols(
-    newdata[, unique(c(group_vars, flatten_chr(from_mf_to_od))), drop=FALSE],
+    newdata[, unique(setdiff(c(group_vars, orig_cols), vars_to_add_to_group)), drop=FALSE],
     model_frame[,vars_to_add_to_group,drop=FALSE])
 
   group_vars <- unique(c(group_vars, vars_to_add_to_group))
@@ -744,7 +745,6 @@ tidysurv.cr_survreg <- function(object, newdata = NULL, group_vars = NULL,
                                           key_col = '.surv_state',
                                           value_col = 'fitted_rate',
                                           gather_cols = names(object))
-
 
   df_covs_with_inc <- df_covs_with_inc[,c('time',names(object),group_vars),drop=FALSE]
   df_fitted_final <- dplyr::distinct(tidyr::gather_(data = df_covs_with_inc,
